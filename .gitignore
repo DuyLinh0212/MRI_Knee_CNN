@@ -1,0 +1,15 @@
+*.npy
+*.DS_Store
+*.pth
+*.csv
+*.pyc
+
+.vscode/
+__pycache__/
+*__pycache__*/
+
+runs/
+train/
+val/
+evaluation/
+weights/
