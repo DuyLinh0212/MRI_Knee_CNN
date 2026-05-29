@@ -11,8 +11,8 @@ def _build_efficientnet_b0_features():
     return net.features
 
 
-class SliceViT(nn.Module):
-    """A light one-layer Transformer over slice-level EfficientNet features."""
+class SliceViTWithMaxToken(nn.Module):
+    """One-layer ViT aggregator over slice tokens plus a max-summary token."""
 
     def __init__(
         self,
@@ -29,7 +29,8 @@ class SliceViT(nn.Module):
             nn.GELU(),
         )
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
-        self.pos_embed = nn.Parameter(torch.zeros(1, max_slices + 1, embed_dim))
+        self.token_type_embed = nn.Parameter(torch.zeros(1, 2, embed_dim))
+        self.pos_embed = nn.Parameter(torch.zeros(1, max_slices + 2, embed_dim))
 
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=embed_dim,
@@ -44,32 +45,35 @@ class SliceViT(nn.Module):
         self.norm = nn.LayerNorm(embed_dim)
 
         nn.init.trunc_normal_(self.cls_token, std=0.02)
+        nn.init.trunc_normal_(self.token_type_embed, std=0.02)
         nn.init.trunc_normal_(self.pos_embed, std=0.02)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x: [B, S, 1280]
         batch_size, slices, _ = x.shape
-        if slices + 1 > self.pos_embed.size(1):
+        if slices + 2 > self.pos_embed.size(1):
             raise ValueError(
-                f"Input has {slices} slices, but max_slices is {self.pos_embed.size(1) - 1}."
+                f"Input has {slices} slices, but max_slices is {self.pos_embed.size(1) - 2}."
             )
 
-        x = self.proj(x)
-        cls = self.cls_token.expand(batch_size, -1, -1)
-        x = torch.cat([cls, x], dim=1)
-        x = x + self.pos_embed[:, : slices + 1, :]
-        x = self.encoder(x)
-        return self.norm(x[:, 0])
+        slice_tokens = self.proj(x)
+        max_token = torch.max(x, dim=1, keepdim=True)[0]
+        max_token = self.proj(max_token) + self.token_type_embed[:, 1:2, :]
+        cls_token = self.cls_token.expand(batch_size, -1, -1) + self.token_type_embed[:, 0:1, :]
+
+        tokens = torch.cat([cls_token, max_token, slice_tokens], dim=1)
+        tokens = tokens + self.pos_embed[:, : slices + 2, :]
+        tokens = self.encoder(tokens)
+        return self.norm(tokens[:, 0])
 
 
 class EfficientNetB0_ViT(nn.Module):
-    """EfficientNetB0 baseline with an extra residual one-layer ViT branch.
+    """EfficientNetB0 with ViT slice aggregation and an explicit max token.
 
-    The main path is the original EfficientNetB0 max-pooling baseline:
-    each plane is max-pooled over slices, then three planes are concatenated
-    and classified by a Linear(3840, 1). The ViT path adds a residual logit,
-    so the model can keep the baseline behavior and learn sequence cues only
-    when they help.
+    EfficientNetB0 extracts a 1280-d feature for each MRI slice. A one-layer
+    Transformer then aggregates the slice tokens. The extra max token gives the
+    Transformer access to the strongest slice-level evidence without using a
+    separate max-pooling classifier branch.
     """
 
     def __init__(
@@ -88,21 +92,17 @@ class EfficientNetB0_ViT(nn.Module):
         self.sagittal = _build_efficientnet_b0_features()
         self.pool = nn.AdaptiveAvgPool2d(1)
 
-        self.axial_vit = SliceViT(feat_dim, embed_dim, num_heads, dropout, max_slices)
-        self.coronal_vit = SliceViT(feat_dim, embed_dim, num_heads, dropout, max_slices)
-        self.sagittal_vit = SliceViT(feat_dim, embed_dim, num_heads, dropout, max_slices)
+        self.axial_vit = SliceViTWithMaxToken(feat_dim, embed_dim, num_heads, dropout, max_slices)
+        self.coronal_vit = SliceViTWithMaxToken(feat_dim, embed_dim, num_heads, dropout, max_slices)
+        self.sagittal_vit = SliceViTWithMaxToken(feat_dim, embed_dim, num_heads, dropout, max_slices)
 
-        self.fc = nn.Linear(3 * feat_dim, 1)
-        self.vit_head = nn.Sequential(
+        self.fc = nn.Sequential(
             nn.Dropout(dropout),
             nn.Linear(3 * embed_dim, 256),
             nn.GELU(),
             nn.Dropout(dropout),
             nn.Linear(256, 1),
         )
-        self.vit_scale = nn.Parameter(torch.tensor(0.1))
-        nn.init.zeros_(self.vit_head[-1].weight)
-        nn.init.zeros_(self.vit_head[-1].bias)
 
         if freeze_backbone:
             self.freeze_backbones()
@@ -117,14 +117,12 @@ class EfficientNetB0_ViT(nn.Module):
             for param in net.parameters():
                 param.requires_grad = True
 
-    def _encode_plane(self, backbone, vit, x: torch.Tensor):
+    def _encode_plane(self, backbone, vit, x: torch.Tensor) -> torch.Tensor:
         if x.dim() == 4:
             slices = x.shape[0]
             feat = backbone(x)
             feat = self.pool(feat).view(1, slices, -1)
-            vit_feat = vit(feat)
-            max_feat = torch.max(feat, dim=1)[0]
-            return max_feat, vit_feat
+            return vit(feat)
 
         if x.dim() != 5:
             raise ValueError(f"Unexpected input shape for plane: {x.shape}")
@@ -133,18 +131,14 @@ class EfficientNetB0_ViT(nn.Module):
         x = x.reshape(batch_size * slices, channels, height, width)
         feat = backbone(x)
         feat = self.pool(feat).view(batch_size, slices, -1)
-        vit_feat = vit(feat)
-        max_feat = torch.max(feat, dim=1)[0]
-        return max_feat, vit_feat
+        return vit(feat)
 
     def forward(self, x):
         if not isinstance(x, (list, tuple)) or len(x) != 3:
             raise ValueError("Input must be a list/tuple: [axial, coronal, sagittal].")
 
-        axial_max, axial_vit = self._encode_plane(self.axial, self.axial_vit, x[0])
-        coronal_max, coronal_vit = self._encode_plane(self.coronal, self.coronal_vit, x[1])
-        sagittal_max, sagittal_vit = self._encode_plane(self.sagittal, self.sagittal_vit, x[2])
-
-        baseline_feats = torch.cat([axial_max, coronal_max, sagittal_max], dim=1)
-        vit_feats = torch.cat([axial_vit, coronal_vit, sagittal_vit], dim=1)
-        return self.fc(baseline_feats) + self.vit_scale * self.vit_head(vit_feats)
+        axial = self._encode_plane(self.axial, self.axial_vit, x[0])
+        coronal = self._encode_plane(self.coronal, self.coronal_vit, x[1])
+        sagittal = self._encode_plane(self.sagittal, self.sagittal_vit, x[2])
+        feats = torch.cat([axial, coronal, sagittal], dim=1)
+        return self.fc(feats)
