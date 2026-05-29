@@ -63,7 +63,7 @@ class SliceViT(nn.Module):
 
 
 class EfficientNetB0_ViT(nn.Module):
-    """EfficientNetB0 baseline with a small one-layer ViT slice aggregator."""
+    """EfficientNetB0 with a light ViT slice encoder and max-pool baseline branch."""
 
     def __init__(
         self,
@@ -84,10 +84,28 @@ class EfficientNetB0_ViT(nn.Module):
         self.axial_vit = SliceViT(feat_dim, embed_dim, num_heads, dropout, max_slices)
         self.coronal_vit = SliceViT(feat_dim, embed_dim, num_heads, dropout, max_slices)
         self.sagittal_vit = SliceViT(feat_dim, embed_dim, num_heads, dropout, max_slices)
+        self.axial_max_proj = nn.Sequential(
+            nn.LayerNorm(feat_dim),
+            nn.Linear(feat_dim, embed_dim),
+            nn.GELU(),
+        )
+        self.coronal_max_proj = nn.Sequential(
+            nn.LayerNorm(feat_dim),
+            nn.Linear(feat_dim, embed_dim),
+            nn.GELU(),
+        )
+        self.sagittal_max_proj = nn.Sequential(
+            nn.LayerNorm(feat_dim),
+            nn.Linear(feat_dim, embed_dim),
+            nn.GELU(),
+        )
 
         self.fc = nn.Sequential(
             nn.Dropout(dropout),
-            nn.Linear(3 * embed_dim, 1),
+            nn.Linear(6 * embed_dim, 512),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(512, 1),
         )
 
         if freeze_backbone:
@@ -103,12 +121,14 @@ class EfficientNetB0_ViT(nn.Module):
             for param in net.parameters():
                 param.requires_grad = True
 
-    def _encode_plane(self, backbone, vit, x: torch.Tensor) -> torch.Tensor:
+    def _encode_plane(self, backbone, vit, max_proj, x: torch.Tensor) -> torch.Tensor:
         if x.dim() == 4:
             slices = x.shape[0]
             feat = backbone(x)
             feat = self.pool(feat).view(1, slices, -1)
-            return vit(feat)
+            vit_feat = vit(feat)
+            max_feat = max_proj(torch.max(feat, dim=1)[0])
+            return torch.cat([vit_feat, max_feat], dim=1)
 
         if x.dim() != 5:
             raise ValueError(f"Unexpected input shape for plane: {x.shape}")
@@ -117,14 +137,16 @@ class EfficientNetB0_ViT(nn.Module):
         x = x.reshape(batch_size * slices, channels, height, width)
         feat = backbone(x)
         feat = self.pool(feat).view(batch_size, slices, -1)
-        return vit(feat)
+        vit_feat = vit(feat)
+        max_feat = max_proj(torch.max(feat, dim=1)[0])
+        return torch.cat([vit_feat, max_feat], dim=1)
 
     def forward(self, x):
         if not isinstance(x, (list, tuple)) or len(x) != 3:
             raise ValueError("Input must be a list/tuple: [axial, coronal, sagittal].")
 
-        axial = self._encode_plane(self.axial, self.axial_vit, x[0])
-        coronal = self._encode_plane(self.coronal, self.coronal_vit, x[1])
-        sagittal = self._encode_plane(self.sagittal, self.sagittal_vit, x[2])
+        axial = self._encode_plane(self.axial, self.axial_vit, self.axial_max_proj, x[0])
+        coronal = self._encode_plane(self.coronal, self.coronal_vit, self.coronal_max_proj, x[1])
+        sagittal = self._encode_plane(self.sagittal, self.sagittal_vit, self.sagittal_max_proj, x[2])
         feats = torch.cat([axial, coronal, sagittal], dim=1)
         return self.fc(feats)
