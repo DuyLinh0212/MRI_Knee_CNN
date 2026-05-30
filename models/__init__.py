@@ -1,3 +1,4 @@
 from .Densenet121 import Densenet121
 from .EfficientNetB0 import EfficientNetB0
 from .EfficientNetB0_ViT import EfficientNetB0_ViT
+from .EfficientNetB0_ViT_finetuned import EfficientNetB0_ViT_Finetuned

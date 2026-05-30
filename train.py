@@ -13,7 +13,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from dataset import load_data
 from config import config as base_config
-from models import Densenet121, EfficientNetB0, EfficientNetB0_ViT
+from models import Densenet121, EfficientNetB0, EfficientNetB0_ViT, EfficientNetB0_ViT_Finetuned
 from utils import _get_lr
 
 import matplotlib
@@ -35,6 +35,9 @@ def _build_model(name: str, config: dict = None):
     if name in {"efficientnetb0_vit", "efficientnetb0vit"}:
         max_slices = 64 if config is None else max(64, int(config.get("target_slices", 64)))
         return EfficientNetB0_ViT(max_slices=max_slices)
+    if name in {"efficientnetb0_vit_finetuned", "efficientnetb0vit_finetuned"}:
+        max_slices = 64 if config is None else max(64, int(config.get("target_slices", 64)))
+        return EfficientNetB0_ViT_Finetuned(max_slices=max_slices, freeze_backbone=True)
     raise ValueError(f"Unsupported model: {name}")
 
 
@@ -743,7 +746,7 @@ if __name__ == "__main__":
         "--model",
         type=str,
         default="efficientnetb0",
-        choices=["densenet121", "efficientnetb0", "efficientnetb0_vit"],
+        choices=["densenet121", "efficientnetb0", "efficientnetb0_vit", "efficientnetb0_vit_finetuned"],
         help="Choose model to train",
     )
     parser.add_argument(
