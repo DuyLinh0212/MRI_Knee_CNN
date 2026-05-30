@@ -16,7 +16,7 @@ config = {
     'exp_name' : 'test',
     # Colab-friendly defaults to reduce GPU memory
     'image_size' : 224,
-    'target_slices' : 28,
+    'target_slices' : 24,
     'num_workers' : 2,
     'use_gradient_accumulation' : 1,
     # Effective batch size = batch_size * gradient_accumulation_steps = 4 * 8 = 32.
