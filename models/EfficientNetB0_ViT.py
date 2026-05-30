@@ -67,9 +67,9 @@ class EfficientNetB0_ViT(nn.Module):
 
     def __init__(
         self,
-        embed_dim: int = 256,
+        embed_dim: int = 384,
         num_heads: int = 8,
-        dropout: float = 0.1,
+        dropout: float = 0.15,
         max_slices: int = 64,
         freeze_backbone: bool = False,
     ):
