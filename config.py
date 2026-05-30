@@ -16,7 +16,7 @@ config = {
     'exp_name' : 'test',
     # Colab-friendly defaults to reduce GPU memory
     'image_size' : 224,
-    'target_slices' : 24,
+    'target_slices' : 32,
     'num_workers' : 2,
     'use_gradient_accumulation' : 1,
     # Effective batch size = batch_size * gradient_accumulation_steps = 4 * 8 = 32.
@@ -29,4 +29,9 @@ config = {
     ),
     'warmstart_tasks' : ['acl', 'meniscus'],
     'warmstart_from_abnormal' : 1,
+    # Fine-tuning schedule for efficientnetb0_vit_finetuned.
+    # Train ViT + classifier first, then open only the last EfficientNet blocks.
+    'finetune_unfreeze_epoch' : 5,
+    'finetune_unfreeze_blocks' : 2,
+    'backbone_lr' : 1e-6,
 }
