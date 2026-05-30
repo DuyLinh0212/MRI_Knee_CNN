@@ -13,7 +13,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from dataset import load_data
 from config import config as base_config
-from models import Densenet121, EfficientNetB0, EfficientNetB0_ViT, EfficientNetB0_ViT_Finetuned
+from models import Densenet121, EfficientNetB0, EfficientNetB0_ViT
 from utils import _get_lr
 
 import matplotlib
@@ -35,9 +35,6 @@ def _build_model(name: str, config: dict = None):
     if name in {"efficientnetb0_vit", "efficientnetb0vit"}:
         max_slices = 64 if config is None else max(64, int(config.get("target_slices", 64)))
         return EfficientNetB0_ViT(max_slices=max_slices)
-    if name in {"efficientnetb0_vit_finetuned", "efficientnetb0vit_finetuned"}:
-        max_slices = 64 if config is None else max(64, int(config.get("target_slices", 64)))
-        return EfficientNetB0_ViT_Finetuned(max_slices=max_slices, freeze_backbone=True)
     raise ValueError(f"Unsupported model: {name}")
 
 
@@ -73,55 +70,6 @@ def _load_model_state_dict(model, state_dict, strict=False):
 def _get_model_state_dict_for_save(model):
     """Lấy state_dict sạch để lưu checkpoint."""
     return _unwrap_model(model).state_dict()
-
-
-def _is_finetuned_model(model_name: str) -> bool:
-    return model_name.lower() in {"efficientnetb0_vit_finetuned", "efficientnetb0vit_finetuned"}
-
-
-def _build_optimizer(model, model_name: str, config: dict):
-    lr = float(config["lr"])
-    weight_decay = float(config["weight_decay"])
-    if not _is_finetuned_model(model_name):
-        return torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
-
-    root_model = _unwrap_model(model)
-    backbone_modules = [root_model.axial, root_model.coronal, root_model.sagittal]
-    backbone_param_ids = {id(param) for module in backbone_modules for param in module.parameters()}
-    backbone_params = [param for module in backbone_modules for param in module.parameters()]
-    head_params = [param for param in root_model.parameters() if id(param) not in backbone_param_ids]
-    backbone_lr = float(config.get("backbone_lr", lr * 0.05))
-
-    print(f"Finetune optimizer: head_lr={lr:.2e} | backbone_lr={backbone_lr:.2e}")
-    return torch.optim.Adam(
-        [
-            {"params": head_params, "lr": lr},
-            {"params": backbone_params, "lr": backbone_lr},
-        ],
-        weight_decay=weight_decay,
-    )
-
-
-def _apply_finetune_stage(model, model_name: str, epoch: int, config: dict):
-    if not _is_finetuned_model(model_name):
-        return
-
-    root_model = _unwrap_model(model)
-    unfreeze_epoch = int(config.get("finetune_unfreeze_epoch", 5))
-    num_blocks = int(config.get("finetune_unfreeze_blocks", 2))
-
-    if epoch < unfreeze_epoch:
-        if getattr(root_model, "_finetune_stage", None) != "head":
-            root_model.freeze_backbones()
-            root_model._finetune_stage = "head"
-            print("Finetune stage: frozen EfficientNet backbones; training ViT + classifier only.")
-        return
-
-    stage_name = f"last_{num_blocks}_blocks"
-    if getattr(root_model, "_finetune_stage", None) != stage_name:
-        root_model.unfreeze_last_backbone_blocks(num_blocks=num_blocks)
-        root_model._finetune_stage = stage_name
-        print(f"Finetune stage: unfroze last {num_blocks} EfficientNet blocks with low backbone LR.")
 
 
 def _try_warmstart_from_abnormal(model, config, task, last_model_path, device):
@@ -490,7 +438,7 @@ def train(config: dict, model_name: str, data_root: str = "data", labels_root: s
             test_criterion = test_criterion.cuda()
 
     print("Setup the Optimizer")
-    optimizer = _build_optimizer(model, model_name, config)
+    optimizer = torch.optim.Adam(model.parameters(), lr=config["lr"], weight_decay=config["weight_decay"])
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode="max", patience=3, factor=0.3, threshold=1e-4
     )
@@ -517,16 +465,9 @@ def train(config: dict, model_name: str, data_root: str = "data", labels_root: s
         print(f"Found checkpoint at {last_model_path}. Loading...")
         checkpoint = torch.load(last_model_path, map_location=device)
         _load_model_state_dict(model, checkpoint["model_state_dict"], strict=True)
-        optimizer_loaded = False
-        try:
-            optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-            optimizer_loaded = True
-        except ValueError as exc:
-            print(f"Skip loading optimizer state because optimizer groups changed: {exc}")
-        if optimizer_loaded and checkpoint.get("scheduler_monitor") == "val_auc":
+        optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        if checkpoint.get("scheduler_monitor") == "val_auc":
             scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
-        elif not optimizer_loaded:
-            print("Skip loading scheduler state because optimizer state was not loaded.")
         else:
             print("Skip loading old scheduler state because it was not configured for val_auc.")
         starting_epoch = checkpoint.get("epoch", starting_epoch) + 1
@@ -560,7 +501,6 @@ def train(config: dict, model_name: str, data_root: str = "data", labels_root: s
     _ensure_csv_header(csv_path, header)
 
     for epoch in range(starting_epoch, num_epochs):
-        _apply_finetune_stage(model, model_name, epoch, config)
         current_lr = _get_lr(optimizer)
         epoch_start_time = time.time()
 
@@ -803,7 +743,7 @@ if __name__ == "__main__":
         "--model",
         type=str,
         default="efficientnetb0",
-        choices=["densenet121", "efficientnetb0", "efficientnetb0_vit", "efficientnetb0_vit_finetuned"],
+        choices=["densenet121", "efficientnetb0", "efficientnetb0_vit"],
         help="Choose model to train",
     )
     parser.add_argument(
@@ -848,24 +788,6 @@ if __name__ == "__main__":
         default=None,
         help="Override config target_slices to reduce/increase per-volume memory.",
     )
-    parser.add_argument(
-        "--finetune-unfreeze-epoch",
-        type=int,
-        default=None,
-        help="For efficientnetb0_vit_finetuned: epoch to unfreeze late EfficientNet blocks.",
-    )
-    parser.add_argument(
-        "--finetune-unfreeze-blocks",
-        type=int,
-        default=None,
-        help="For efficientnetb0_vit_finetuned: number of final EfficientNet feature blocks to unfreeze.",
-    )
-    parser.add_argument(
-        "--backbone-lr",
-        type=float,
-        default=None,
-        help="For efficientnetb0_vit_finetuned: learning rate for EfficientNet backbone parameter group.",
-    )
     args = parser.parse_args()
 
     tasks = [t.strip() for t in args.tasks.split(",") if t.strip()]
@@ -881,12 +803,6 @@ if __name__ == "__main__":
             cfg["use_gradient_accumulation"] = int(args.grad_accum_steps > 1)
         if args.target_slices is not None:
             cfg["target_slices"] = args.target_slices
-        if args.finetune_unfreeze_epoch is not None:
-            cfg["finetune_unfreeze_epoch"] = args.finetune_unfreeze_epoch
-        if args.finetune_unfreeze_blocks is not None:
-            cfg["finetune_unfreeze_blocks"] = args.finetune_unfreeze_blocks
-        if args.backbone_lr is not None:
-            cfg["backbone_lr"] = args.backbone_lr
         print("Training Configuration")
         print(cfg)
         train(

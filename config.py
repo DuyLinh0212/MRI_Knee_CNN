@@ -29,9 +29,4 @@ config = {
     ),
     'warmstart_tasks' : ['acl', 'meniscus'],
     'warmstart_from_abnormal' : 1,
-    # Fine-tuning schedule for efficientnetb0_vit_finetuned.
-    # Train ViT + classifier first, then open only the last EfficientNet blocks.
-    'finetune_unfreeze_epoch' : 5,
-    'finetune_unfreeze_blocks' : 2,
-    'backbone_lr' : 1e-6,
 }
