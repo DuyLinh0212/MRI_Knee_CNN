@@ -69,7 +69,7 @@ class EfficientNetB0_ViT(nn.Module):
         self,
         embed_dim: int = 256,
         num_heads: int = 8,
-        dropout: float = 0.1,
+        dropout: float = 0.3,
         max_slices: int = 64,
         freeze_backbone: bool = False,
     ):

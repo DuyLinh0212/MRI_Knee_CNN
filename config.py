@@ -3,14 +3,14 @@ import os
 config = {
     'max_epoch' : 50,
     'log_train' : 100,
-    'lr' : 2e-5,
+    'lr' : 1e-5,
     'starting_epoch' : 0,
     # Micro-batch per optimizer forward/backward step.
     # Keep this small on 14-16GB GPUs; gradient accumulation controls effective batch size.
     'batch_size' : 4,
     'log_val' : 10,
     'task' : 'acl', # "meniscus" and  "acl" are the other options
-    'weight_decay' : 1e-4,
+    'weight_decay' : 5e-4,
     'patience' : 10,
     'save_model' : 1,
     'exp_name' : 'test',
