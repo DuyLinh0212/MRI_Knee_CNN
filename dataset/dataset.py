@@ -5,10 +5,8 @@ import numpy as np
 import torch
 import torch.utils.data as data
 import torch.nn.functional as F
-from torchvision import transforms
 
 from preprocessing.slice_sampling import uniform_slice_sampling
-from preprocessing.augmentation import random_augmentation
 
 INPUT_DIM = 224
 MAX_PIXEL_VAL = 255
@@ -88,10 +86,6 @@ class MRData(data.Dataset):
             img_raw[plane] = np.load(self.paths[plane][index])
             if self.target_slices is not None:
                 img_raw[plane] = uniform_slice_sampling(img_raw[plane], self.target_slices)
-            if self.train:
-                vol = torch.from_numpy(img_raw[plane])
-                vol = random_augmentation(vol)
-                img_raw[plane] = vol.numpy()
             img_raw[plane] = self._resize_image(img_raw[plane])
             
         label = self.labels[index]
@@ -157,18 +151,12 @@ def load_data(
 ):
     # Định nghĩa augmentation cho tập train.
     # Không cần repeat/permute ở đây vì _resize_image đã tạo tensor 3 kênh.
-    augments = transforms.Compose([
-        transforms.RandomRotation(25),
-        transforms.RandomAffine(degrees=0, translate=(0.11, 0.11)),
-        transforms.RandomHorizontalFlip(),
-    ])
-
     print('Loading Train Dataset of {} task...'.format(task))
     train_data = MRData(
         task,
         train=True,
         split='train',
-        transform=augments,
+        transform=None,
         target_slices=target_slices,
         input_dim=image_size,
         data_root=data_root,
