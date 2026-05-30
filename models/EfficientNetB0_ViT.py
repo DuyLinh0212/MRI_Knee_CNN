@@ -63,13 +63,13 @@ class SliceViT(nn.Module):
 
 
 class EfficientNetB0_ViT(nn.Module):
-    """EfficientNetB0 baseline with a small one-layer ViT slice aggregator."""
+    """EfficientNetB0 baseline with max-pooling plus a small ViT slice branch."""
 
     def __init__(
         self,
         embed_dim: int = 256,
         num_heads: int = 8,
-        dropout: float = 0.3,
+        dropout: float = 0.1,
         max_slices: int = 64,
         freeze_backbone: bool = False,
     ):
@@ -85,9 +85,13 @@ class EfficientNetB0_ViT(nn.Module):
         self.coronal_vit = SliceViT(feat_dim, embed_dim, num_heads, dropout, max_slices)
         self.sagittal_vit = SliceViT(feat_dim, embed_dim, num_heads, dropout, max_slices)
 
+        plane_dim = feat_dim + embed_dim
         self.fc = nn.Sequential(
             nn.Dropout(dropout),
-            nn.Linear(3 * embed_dim, 1),
+            nn.Linear(3 * plane_dim, 512),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(512, 1),
         )
 
         if freeze_backbone:
@@ -108,7 +112,9 @@ class EfficientNetB0_ViT(nn.Module):
             slices = x.shape[0]
             feat = backbone(x)
             feat = self.pool(feat).view(1, slices, -1)
-            return vit(feat)
+            max_feat = torch.max(feat, dim=1)[0]
+            vit_feat = vit(feat)
+            return torch.cat([max_feat, vit_feat], dim=1)
 
         if x.dim() != 5:
             raise ValueError(f"Unexpected input shape for plane: {x.shape}")
@@ -117,7 +123,9 @@ class EfficientNetB0_ViT(nn.Module):
         x = x.reshape(batch_size * slices, channels, height, width)
         feat = backbone(x)
         feat = self.pool(feat).view(batch_size, slices, -1)
-        return vit(feat)
+        max_feat = torch.max(feat, dim=1)[0]
+        vit_feat = vit(feat)
+        return torch.cat([max_feat, vit_feat], dim=1)
 
     def forward(self, x):
         if not isinstance(x, (list, tuple)) or len(x) != 3:
