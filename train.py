@@ -384,7 +384,7 @@ def train(config: dict, model_name: str, data_root: str = "data", labels_root: s
             test_criterion = test_criterion.cuda()
 
     print("Setup the Optimizer")
-    optimizer = torch.optim.AdamW(model.parameters(), lr=config["lr"], weight_decay=config["weight_decay"])
+    optimizer = torch.optim.Adam(model.parameters(), lr=config["lr"], weight_decay=config["weight_decay"])
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode="max", patience=3, factor=0.3, threshold=1e-4
     )

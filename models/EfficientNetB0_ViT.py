@@ -11,8 +11,8 @@ def _build_efficientnet_b0_features():
     return net.features
 
 
-class SliceViTWithMaxToken(nn.Module):
-    """One-layer ViT aggregator over slice tokens plus a max-summary token."""
+class SliceViT(nn.Module):
+    """A light one-layer Transformer over slice-level EfficientNet features."""
 
     def __init__(
         self,
@@ -29,8 +29,7 @@ class SliceViTWithMaxToken(nn.Module):
             nn.GELU(),
         )
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
-        self.token_type_embed = nn.Parameter(torch.zeros(1, 2, embed_dim))
-        self.pos_embed = nn.Parameter(torch.zeros(1, max_slices + 2, embed_dim))
+        self.pos_embed = nn.Parameter(torch.zeros(1, max_slices + 1, embed_dim))
 
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=embed_dim,
@@ -45,36 +44,26 @@ class SliceViTWithMaxToken(nn.Module):
         self.norm = nn.LayerNorm(embed_dim)
 
         nn.init.trunc_normal_(self.cls_token, std=0.02)
-        nn.init.trunc_normal_(self.token_type_embed, std=0.02)
         nn.init.trunc_normal_(self.pos_embed, std=0.02)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x: [B, S, 1280]
         batch_size, slices, _ = x.shape
-        if slices + 2 > self.pos_embed.size(1):
+        if slices + 1 > self.pos_embed.size(1):
             raise ValueError(
-                f"Input has {slices} slices, but max_slices is {self.pos_embed.size(1) - 2}."
+                f"Input has {slices} slices, but max_slices is {self.pos_embed.size(1) - 1}."
             )
 
-        slice_tokens = self.proj(x)
-        max_token = torch.max(x, dim=1, keepdim=True)[0]
-        max_token = self.proj(max_token) + self.token_type_embed[:, 1:2, :]
-        cls_token = self.cls_token.expand(batch_size, -1, -1) + self.token_type_embed[:, 0:1, :]
-
-        tokens = torch.cat([cls_token, max_token, slice_tokens], dim=1)
-        tokens = tokens + self.pos_embed[:, : slices + 2, :]
-        tokens = self.encoder(tokens)
-        return self.norm(tokens[:, 0])
+        x = self.proj(x)
+        cls = self.cls_token.expand(batch_size, -1, -1)
+        x = torch.cat([cls, x], dim=1)
+        x = x + self.pos_embed[:, : slices + 1, :]
+        x = self.encoder(x)
+        return self.norm(x[:, 0])
 
 
 class EfficientNetB0_ViT(nn.Module):
-    """EfficientNetB0 with ViT slice aggregation and an explicit max token.
-
-    EfficientNetB0 extracts a 1280-d feature for each MRI slice. A one-layer
-    Transformer then aggregates the slice tokens. The extra max token gives the
-    Transformer access to the strongest slice-level evidence without using a
-    separate max-pooling classifier branch.
-    """
+    """EfficientNetB0 baseline with a small one-layer ViT slice aggregator."""
 
     def __init__(
         self,
@@ -92,16 +81,13 @@ class EfficientNetB0_ViT(nn.Module):
         self.sagittal = _build_efficientnet_b0_features()
         self.pool = nn.AdaptiveAvgPool2d(1)
 
-        self.axial_vit = SliceViTWithMaxToken(feat_dim, embed_dim, num_heads, dropout, max_slices)
-        self.coronal_vit = SliceViTWithMaxToken(feat_dim, embed_dim, num_heads, dropout, max_slices)
-        self.sagittal_vit = SliceViTWithMaxToken(feat_dim, embed_dim, num_heads, dropout, max_slices)
+        self.axial_vit = SliceViT(feat_dim, embed_dim, num_heads, dropout, max_slices)
+        self.coronal_vit = SliceViT(feat_dim, embed_dim, num_heads, dropout, max_slices)
+        self.sagittal_vit = SliceViT(feat_dim, embed_dim, num_heads, dropout, max_slices)
 
         self.fc = nn.Sequential(
             nn.Dropout(dropout),
-            nn.Linear(3 * embed_dim, 256),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(256, 1),
+            nn.Linear(3 * embed_dim, 1),
         )
 
         if freeze_backbone:
