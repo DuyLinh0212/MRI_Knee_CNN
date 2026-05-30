@@ -38,42 +38,6 @@ def _build_model(name: str, config: dict = None):
     raise ValueError(f"Unsupported model: {name}")
 
 
-def _build_optimizer(model, model_name: str, config: dict):
-    """Create optimizer; EfficientNetB0_ViT uses a higher LR for ViT/head."""
-    model_name = model_name.lower()
-    base_model = _unwrap_model(model)
-    backbone_lr = float(config["lr"])
-    vit_lr = float(config.get("vit_lr", 1e-4))
-    weight_decay = float(config["weight_decay"])
-
-    if model_name in {"efficientnetb0_vit", "efficientnetb0vit"} and all(
-        hasattr(base_model, name)
-        for name in ("axial", "coronal", "sagittal", "axial_vit", "coronal_vit", "sagittal_vit", "fc")
-    ):
-        backbone_params = (
-            list(base_model.axial.parameters())
-            + list(base_model.coronal.parameters())
-            + list(base_model.sagittal.parameters())
-        )
-        vit_params = (
-            list(base_model.axial_vit.parameters())
-            + list(base_model.coronal_vit.parameters())
-            + list(base_model.sagittal_vit.parameters())
-            + list(base_model.fc.parameters())
-        )
-        print(f"Optimizer LR groups | backbone: {backbone_lr:g} | vit/head: {vit_lr:g}")
-        return torch.optim.Adam(
-            [
-                {"params": backbone_params, "lr": backbone_lr},
-                {"params": vit_params, "lr": vit_lr},
-            ],
-            weight_decay=weight_decay,
-        )
-
-    print(f"Optimizer LR: {backbone_lr:g}")
-    return torch.optim.Adam(model.parameters(), lr=backbone_lr, weight_decay=weight_decay)
-
-
 def _extract_state_dict(checkpoint):
     """Lấy state_dict từ nhiều định dạng checkpoint khác nhau."""
     if isinstance(checkpoint, dict):
@@ -420,7 +384,7 @@ def train(config: dict, model_name: str, data_root: str = "data", labels_root: s
             test_criterion = test_criterion.cuda()
 
     print("Setup the Optimizer")
-    optimizer = _build_optimizer(model, model_name, config)
+    optimizer = torch.optim.Adam(model.parameters(), lr=config["lr"], weight_decay=config["weight_decay"])
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode="max", patience=3, factor=0.3, threshold=1e-4
     )
