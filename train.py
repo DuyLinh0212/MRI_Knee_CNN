@@ -131,11 +131,13 @@ def _run_epoch(
     is_train = optimizer is not None
     model.train() if is_train else model.eval()
     grad_accum_steps = max(1, int(grad_accum_steps))
+    amp_enabled = bool(use_amp and device != "cpu" and is_train)
 
     y_true = []
     y_prob = []
     losses = []
     total_batches = len(loader)
+    accumulated_steps = 0
 
     iterator = loader
     if tqdm is not None:
@@ -153,35 +155,73 @@ def _run_epoch(
         if device != "cpu":
             images = [img.to(device) for img in images]
             label = label.to(device)
+        images = [torch.nan_to_num(img.float(), nan=0.0, posinf=0.0, neginf=0.0) for img in images]
+        label = torch.nan_to_num(label.float(), nan=0.0, posinf=1.0, neginf=0.0)
 
         with torch.set_grad_enabled(is_train):
             # Mixed precision giúp giảm bộ nhớ GPU khi train.
-            with autocast(enabled=bool(use_amp and device != "cpu")):
+            with autocast(enabled=amp_enabled):
                 output = model(images)
-                loss = criterion(output, label)
+            output = output.float()
+            finite_mask = torch.isfinite(output) & torch.isfinite(label)
+            if not torch.all(finite_mask):
+                bad_count = int((~finite_mask).sum().detach().cpu().item())
+                print(f"Warning: {phase} batch {batch_idx} has {bad_count} non-finite logits/labels. Skipping them.")
+            output_for_loss = output[finite_mask]
+            label_for_loss = label[finite_mask]
+            if output_for_loss.numel() == 0:
+                if is_train:
+                    optimizer.zero_grad(set_to_none=True)
+                    accumulated_steps = 0
+                continue
+            with autocast(enabled=False):
+                loss = criterion(output_for_loss.float(), label_for_loss.float())
+            if not torch.isfinite(loss):
+                print(f"Warning: {phase} batch {batch_idx} produced non-finite loss. Skipping batch.")
+                if is_train:
+                    optimizer.zero_grad(set_to_none=True)
+                    accumulated_steps = 0
+                continue
             if is_train:
                 loss_for_backward = loss / grad_accum_steps
-                should_step = ((batch_idx + 1) % grad_accum_steps == 0) or ((batch_idx + 1) == total_batches)
+                accumulated_steps += 1
+                should_step = (accumulated_steps >= grad_accum_steps) or ((batch_idx + 1) == total_batches)
                 # Tích lũy gradient để mô phỏng batch size lớn hơn.
-                if scaler is not None and bool(use_amp and device != "cpu"):
+                if scaler is not None and amp_enabled:
                     scaler.scale(loss_for_backward).backward()
                     if should_step:
+                        scaler.unscale_(optimizer)
+                        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                         scaler.step(optimizer)
                         scaler.update()
                         optimizer.zero_grad(set_to_none=True)
+                        accumulated_steps = 0
                 else:
                     loss_for_backward.backward()
                     if should_step:
+                        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                         optimizer.step()
                         optimizer.zero_grad(set_to_none=True)
+                        accumulated_steps = 0
 
         losses.append(loss.item())
 
-        probas = torch.sigmoid(output).detach().cpu().view(-1).numpy().tolist()
-        labels = label.detach().cpu().view(-1).numpy().tolist()
+        probas = torch.sigmoid(output_for_loss).detach().cpu().view(-1).numpy().tolist()
+        labels = label_for_loss.detach().cpu().view(-1).numpy().tolist()
 
         y_prob.extend(probas)
         y_true.extend(labels)
+
+    if is_train and accumulated_steps > 0:
+        if scaler is not None and amp_enabled:
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            optimizer.step()
+        optimizer.zero_grad(set_to_none=True)
 
     if len(losses) == 0:
         return 0.0, [], []
@@ -190,8 +230,21 @@ def _run_epoch(
     return loss_mean, y_true, y_prob
 
 
+def _filter_finite_pairs(y_true, y_prob):
+    y_true_arr = np.asarray(y_true, dtype=np.float64)
+    y_prob_arr = np.asarray(y_prob, dtype=np.float64)
+    mask = np.isfinite(y_true_arr) & np.isfinite(y_prob_arr)
+    if not np.all(mask):
+        dropped = int(np.size(mask) - np.count_nonzero(mask))
+        print(f"Warning: dropped {dropped} non-finite predictions before computing metrics.")
+    y_true_arr = y_true_arr[mask]
+    y_prob_arr = np.clip(y_prob_arr[mask], 0.0, 1.0)
+    return y_true_arr.tolist(), y_prob_arr.tolist()
+
+
 def _compute_metrics(y_true, y_prob, threshold=0.5):
     """Tính các chỉ số đánh giá nhị phân từ xác suất dự đoán."""
+    y_true, y_prob = _filter_finite_pairs(y_true, y_prob)
     if len(y_true) == 0:
         return {
             "auc": 0.5,
@@ -222,6 +275,7 @@ def _compute_metrics(y_true, y_prob, threshold=0.5):
 
 def _find_best_threshold_by_f1(y_true, y_prob, num_thresholds=101):
     """Quét ngưỡng dự đoán để tìm threshold cho F1 tốt nhất."""
+    y_true, y_prob = _filter_finite_pairs(y_true, y_prob)
     if len(y_true) == 0 or len(set(y_true)) < 2:
         return 0.5, 0.0
 

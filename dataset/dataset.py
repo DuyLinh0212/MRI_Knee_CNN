@@ -72,7 +72,7 @@ class MRData(data.Dataset):
         if weights:
             self.weights = torch.FloatTensor(weights)
         else:
-            self.weights = torch.FloatTensor([neg / pos])
+            self.weights = torch.FloatTensor([neg / pos]) if pos > 0 else torch.FloatTensor([1.0])
         
         print(f'Task: {task} | Split: {self.split}')
         print(f'Samples: -ve: {neg}, +ve: {pos} | Loss Weights: {self.weights}')
@@ -83,7 +83,8 @@ class MRData(data.Dataset):
     def __getitem__(self, index):
         img_raw = {}
         for plane in self.planes:
-            img_raw[plane] = np.load(self.paths[plane][index])
+            img_raw[plane] = np.load(self.paths[plane][index]).astype(np.float32, copy=False)
+            img_raw[plane] = np.nan_to_num(img_raw[plane], nan=0.0, posinf=MAX_PIXEL_VAL, neginf=0.0)
             if self.target_slices is not None:
                 img_raw[plane] = uniform_slice_sampling(img_raw[plane], self.target_slices)
             img_raw[plane] = self._resize_image(img_raw[plane])
@@ -96,6 +97,9 @@ class MRData(data.Dataset):
     def _resize_image(self, image):
         """Crop/resize, chuẩn hóa và chuyển volume MRI sang tensor 3 kênh."""
         # 1. Center crop nếu ảnh đủ lớn, sau đó resize an toàn khi cần.
+        image = np.asarray(image, dtype=np.float32)
+        image = np.nan_to_num(image, nan=0.0, posinf=MAX_PIXEL_VAL, neginf=0.0)
+
         target = self.input_dim
         if target is not None:
             height, width = image.shape[1], image.shape[2]
@@ -113,15 +117,17 @@ class MRData(data.Dataset):
                     align_corners=False,
                 )
                 image = image_tensor.squeeze(1).numpy()
+                image = np.nan_to_num(image, nan=0.0, posinf=MAX_PIXEL_VAL, neginf=0.0)
         
         # 2. Chuẩn hóa cường độ ảnh về cùng thang giá trị.
         image_min = np.min(image)
         image_max = np.max(image)
         denom = image_max - image_min
-        if denom > 1e-6:
+        if np.isfinite(denom) and denom > 1e-6:
             image = (image - image_min) / denom * MAX_PIXEL_VAL
         else:
             image = np.zeros_like(image, dtype=np.float32)
+        image = np.nan_to_num(image, nan=0.0, posinf=MAX_PIXEL_VAL, neginf=0.0)
         image = (image - MEAN) / STDDEV
 
         # 3. Chuyển sang Tensor để đưa vào model PyTorch.

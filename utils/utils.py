@@ -21,6 +21,8 @@ def _evaluate_model(model, val_loader, criterion, epoch, num_epochs, writer, cur
     y_gt = []
     # List of losses obtained
     losses = []
+    auc = 0.5
+    i = 0
 
     # Iterate over the validation dataset
     for i, batch in enumerate(val_loader):
@@ -32,11 +34,20 @@ def _evaluate_model(model, val_loader, criterion, epoch, num_epochs, writer, cur
         if torch.cuda.is_available():
             images = [image.cuda() for image in images]
             label = label.cuda()
+        images = [torch.nan_to_num(image.float(), nan=0.0, posinf=0.0, neginf=0.0) for image in images]
+        label = torch.nan_to_num(label.float(), nan=0.0, posinf=1.0, neginf=0.0)
 
         # Obtain the model output by passing the images as input
-        output = model(images)
+        with torch.no_grad():
+            output = model(images).float()
+        if not torch.isfinite(output).all():
+            print(f"Warning: validation batch {i} has non-finite output. Skipping batch.")
+            continue
         # Evaluate the loss by comparing the output and groundtruth label
         loss = criterion(output, label)
+        if not torch.isfinite(loss):
+            print(f"Warning: validation batch {i} produced non-finite loss. Skipping batch.")
+            continue
         # Add loss to the list of losses
         loss_value = loss.item()
         losses.append(loss_value)
@@ -75,7 +86,7 @@ def _evaluate_model(model, val_loader, criterion, epoch, num_epochs, writer, cur
     # Add information to the writer about total epochs and Area under ROC curve
     writer.add_scalar('Val/AUC_epoch', auc, epoch + i)
     # Find mean area under ROC curve and validation loss
-    val_loss_epoch = np.round(np.mean(losses), 4)
+    val_loss_epoch = 0.0 if len(losses) == 0 else np.round(np.mean(losses), 4)
     val_auc_epoch = np.round(auc, 4)
 
     return val_loss_epoch, val_auc_epoch
@@ -92,6 +103,8 @@ def _train_model(model, train_loader, epoch, num_epochs, optimizer, criterion, w
     # Initialize the loss between the groundtruth label
     # and the predicted probability
     losses = []
+    auc = 0.5
+    i = 0
 
     # Iterate over the training dataset
     for i, batch in enumerate(train_loader):
@@ -106,15 +119,24 @@ def _train_model(model, train_loader, epoch, num_epochs, optimizer, criterion, w
         if torch.cuda.is_available():
             images = [image.cuda() for image in images]
             label = label.cuda()
+        images = [torch.nan_to_num(image.float(), nan=0.0, posinf=0.0, neginf=0.0) for image in images]
+        label = torch.nan_to_num(label.float(), nan=0.0, posinf=1.0, neginf=0.0)
 
         # Obtain the prediction using the model
-        output = model(images)
+        output = model(images).float()
+        if not torch.isfinite(output).all():
+            print(f"Warning: train batch {i} has non-finite output. Skipping batch.")
+            continue
 
         # Evaluate the loss by comparing the prediction
         # and groundtruth label
         loss = criterion(output, label)
+        if not torch.isfinite(loss):
+            print(f"Warning: train batch {i} produced non-finite loss. Skipping batch.")
+            continue
         # Perform a backward propagation
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         # Modify the weights based on the error gradient
         optimizer.step()
 
@@ -159,7 +181,7 @@ def _train_model(model, train_loader, epoch, num_epochs, optimizer, criterion, w
     writer.add_scalar('Train/AUC_epoch', auc, epoch + i)
 
     # Find mean area under ROC curve and training loss
-    train_loss_epoch = np.round(np.mean(losses), 4)
+    train_loss_epoch = 0.0 if len(losses) == 0 else np.round(np.mean(losses), 4)
     train_auc_epoch = np.round(auc, 4)
 
     return train_loss_epoch, train_auc_epoch
