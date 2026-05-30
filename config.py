@@ -4,6 +4,8 @@ config = {
     'max_epoch' : 50,
     'log_train' : 100,
     'lr' : 2e-5,
+    # Higher LR for EfficientNetB0_ViT transformer/classifier head.
+    'vit_lr' : 1e-4,
     'starting_epoch' : 0,
     # Micro-batch per optimizer forward/backward step.
     # Keep this small on 14-16GB GPUs; gradient accumulation controls effective batch size.
@@ -16,7 +18,7 @@ config = {
     'exp_name' : 'test',
     # Colab-friendly defaults to reduce GPU memory
     'image_size' : 224,
-    'target_slices' : 24,
+    'target_slices' : 28,
     'num_workers' : 2,
     'use_gradient_accumulation' : 1,
     # Effective batch size = batch_size * gradient_accumulation_steps = 4 * 8 = 32.
