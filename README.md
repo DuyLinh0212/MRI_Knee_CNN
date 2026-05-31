@@ -1,20 +1,20 @@
 # DeepLearning_train
 
-Repo huan luyen mo hinh deep learning phan loai MRI khop goi theo 3 mat cat:
+Repo huấn luyện mô hình deep learning để phân loại MRI khớp gối theo 3 mặt cắt:
 
 - `axial`
 - `coronal`
 - `sagittal`
 
-Moi task la mot bai toan binary classification:
+Mỗi task là một bài toán phân loại nhị phân:
 
-- `abnormal`: phat hien bat thuong tong quat.
-- `acl`: phat hien ton thuong day chang cheo truoc.
-- `meniscus`: phat hien ton thuong sun chem.
+- `abnormal`: phát hiện bất thường tổng quát.
+- `acl`: phát hiện tổn thương dây chằng chéo trước.
+- `meniscus`: phát hiện tổn thương sụn chêm.
 
-Pipeline hien tai doc volume MRI dang `.npy`, chuan hoa so slice/kich thuoc anh, dua 3 mat cat vao model PyTorch, train bang `BCEWithLogitsLoss`, luu checkpoint va sinh metric/plot danh gia.
+Pipeline hiện tại đọc volume MRI dạng `.npy`, chuẩn hóa số slice/kích thước ảnh, đưa 3 mặt cắt vào model PyTorch, train bằng `BCEWithLogitsLoss`, lưu checkpoint và sinh metric/plot đánh giá.
 
-## Cau truc thu muc
+## Cấu trúc thư mục
 
 ```text
 DeepLearning_train/
@@ -43,47 +43,47 @@ DeepLearning_train/
 `-- evaluation/
 ```
 
-## Chuc nang tung file
+## Chức năng từng file
 
-### File chinh
+### File chính
 
-| File | Chuc nang |
+| File | Chức năng |
 |---|---|
-| `train.py` | File train chinh. Nhan tham so CLI, load data, khoi tao model, train/validation/test, tinh metric, tim best threshold theo F1, luu checkpoint va ve bieu do. |
-| `config.py` | Chua cau hinh mac dinh: epoch, learning rate, batch size, image size, target slices, patience, gradient accumulation. |
-| `requirements.txt` | Danh sach thu vien can cai: PyTorch, torchvision, numpy, pandas, scikit-learn, matplotlib, tensorboard, tqdm. |
-| `README.md` | Tai lieu mo ta repo, du lieu, cach train va output. |
+| `train.py` | File train chính. Nhận tham số CLI, load data, khởi tạo model, train/validation/test, tính metric, tìm best threshold theo F1, lưu checkpoint và vẽ biểu đồ. |
+| `config.py` | Chứa cấu hình mặc định: epoch, learning rate, batch size, image size, target slices, patience, gradient accumulation. |
+| `requirements.txt` | Danh sách thư viện cần cài: PyTorch, torchvision, numpy, pandas, scikit-learn, matplotlib, tensorboard, tqdm. |
+| `README.md` | Tài liệu mô tả repo, dữ liệu, cách train và output. |
 
-### Dataset va tien xu ly
+### Dataset và tiền xử lý
 
-| File | Chuc nang |
+| File | Chức năng |
 |---|---|
-| `dataset/dataset.py` | Dinh nghia `MRData` va `load_data`. Doc label CSV, nap 3 file `.npy` theo 3 mat cat, resize/crop ve `image_size`, chuan hoa anh, tao tensor 3 kenh, tinh `pos_weight` cho loss va tao DataLoader train/valid/test. |
-| `dataset/__init__.py` | Export `MRData` va `load_data` de import ngan gon bang `from dataset import load_data`. |
-| `preprocessing/slice_sampling.py` | Ham `uniform_slice_sampling` noi suy/chon deu volume MRI ve so slice co dinh `target_slices`. |
+| `dataset/dataset.py` | Định nghĩa `MRData` và `load_data`. Đọc label CSV, nạp 3 file `.npy` theo 3 mặt cắt, resize/crop về `image_size`, chuẩn hóa ảnh, tạo tensor 3 kênh, tính `pos_weight` cho loss và tạo DataLoader train/valid/test. |
+| `dataset/__init__.py` | Export `MRData` và `load_data` để import ngắn gọn bằng `from dataset import load_data`. |
+| `preprocessing/slice_sampling.py` | Hàm `uniform_slice_sampling` nội suy/chọn đều volume MRI về số slice cố định `target_slices`. |
 
 ### Model
 
-| File | Chuc nang |
+| File | Chức năng |
 |---|---|
-| `models/Densenet121.py` | Model DenseNet121 rieng cho 3 mat cat. Moi mat cat co backbone DenseNet121, gop dac trung theo slice bang max pooling, noi 3 vector dac trung va dua qua `Linear` ra 1 logit. |
-| `models/EfficientNetB0.py` | Model EfficientNet-B0 rieng cho 3 mat cat. Cach xu ly tuong tu DenseNet121 nhung backbone la EfficientNet-B0, dac trung cuoi co kich thuoc 1280. |
-| `models/EfficientNetB0_ViT.py` | Model EfficientNet-B0 ket hop Transformer nhe. EfficientNet trich dac trung tung slice, `SliceViT` gop dac trung theo chieu slice bang class token/positional embedding, sau do noi 3 mat cat de phan loai. |
-| `models/__init__.py` | Export cac class model: `Densenet121`, `EfficientNetB0`, `EfficientNetB0_ViT`. |
+| `models/Densenet121.py` | Model DenseNet121 riêng cho 3 mặt cắt. Mỗi mặt cắt có backbone DenseNet121, gộp đặc trưng theo slice bằng max pooling, nối 3 vector đặc trưng và đưa qua `Linear` ra 1 logit. |
+| `models/EfficientNetB0.py` | Model EfficientNet-B0 riêng cho 3 mặt cắt. Cách xử lý tương tự DenseNet121 nhưng backbone là EfficientNet-B0, đặc trưng cuối có kích thước 1280. |
+| `models/EfficientNetB0_ViT.py` | Model EfficientNet-B0 kết hợp Transformer nhẹ. EfficientNet trích đặc trưng từng slice, `SliceViT` gộp đặc trưng theo chiều slice bằng class token/positional embedding, sau đó nối 3 mặt cắt để phân loại. |
+| `models/__init__.py` | Export các class model: `Densenet121`, `EfficientNetB0`, `EfficientNetB0_ViT`. |
 
-### Tools va utils
+### Tools và utils
 
-| File | Chuc nang |
+| File | Chức năng |
 |---|---|
-| `tools/split_dataset.py` | Tach du lieu tu train thanh train/valid/test theo ti le, di chuyen file `.npy` va ghi lai CSV label cho tung split. Co `--dry-run` de xem thu truoc khi move file. |
-| `tools/lr_finder.py` | Chay LR finder cho `densenet121` hoac `efficientnetb0`, quet learning rate tu `--lr-start` den `--lr-end`, luu plot loss theo LR vao `evaluation/`. |
-| `tools/convert_n5_efficientnet_pretrained.py` | Convert checkpoint EfficientNet-B0 tu format co `backbone.*` sang format 3 backbone `axial/coronal/sagittal` cua repo. |
-| `utils/utils.py` | Ham train/evaluate phien ban cu va ham `_get_lr` dang duoc `train.py` dung de lay learning rate hien tai. |
-| `utils/__init__.py` | Export cac helper trong `utils.py`. |
+| `tools/split_dataset.py` | Tách dữ liệu từ train thành train/valid/test theo tỉ lệ, di chuyển file `.npy` và ghi lại CSV label cho từng split. Có `--dry-run` để xem thử trước khi move file. |
+| `tools/lr_finder.py` | Chạy LR finder cho `densenet121` hoặc `efficientnetb0`, quét learning rate từ `--lr-start` đến `--lr-end`, lưu plot loss theo LR vào `evaluation/`. |
+| `tools/convert_n5_efficientnet_pretrained.py` | Convert checkpoint EfficientNet-B0 từ format có `backbone.*` sang format 3 backbone `axial/coronal/sagittal` của repo. |
+| `utils/utils.py` | Hàm train/evaluate phiên bản cũ và hàm `_get_lr` đang được `train.py` dùng để lấy learning rate hiện tại. |
+| `utils/__init__.py` | Export các helper trong `utils.py`. |
 
-## Model ho tro
+## Model hỗ trợ
 
-Tham so `--model` trong `train.py` ho tro:
+Tham số `--model` trong `train.py` hỗ trợ:
 
 ```text
 densenet121
@@ -91,15 +91,15 @@ efficientnetb0
 efficientnetb0_vit
 ```
 
-Model khuyen dung hien tai:
+Model khuyên dùng hiện tại:
 
 ```text
 efficientnetb0_vit
 ```
 
-## Cau truc du lieu
+## Cấu trúc dữ liệu
 
-`--data-root` phai tro toi thu muc co 3 split `train`, `valid`, `test`. Moi split co 3 mat cat:
+`--data-root` phải trỏ tới thư mục có 3 split `train`, `valid`, `test`. Mỗi split có 3 mặt cắt:
 
 ```text
 data/
@@ -117,7 +117,7 @@ data/
     `-- sagittal/
 ```
 
-Moi mau can co du 3 file `.npy` cung id:
+Mỗi mẫu cần có đủ 3 file `.npy` cùng id:
 
 ```text
 data/train/axial/0001.npy
@@ -125,7 +125,7 @@ data/train/coronal/0001.npy
 data/train/sagittal/0001.npy
 ```
 
-`--labels-root` phai tro toi thu muc label:
+`--labels-root` phải trỏ tới thư mục label:
 
 ```text
 labels/
@@ -140,34 +140,34 @@ labels/
 `-- test-meniscus.csv
 ```
 
-CSV khong co header vi code doc voi `header=None`. Moi dong gom `id,label`:
+CSV không có header vì code đọc với `header=None`. Mỗi dòng gồm `id,label`:
 
 ```csv
 1,0
 2,1
 ```
 
-Code se tu chuyen id ve dang 4 chu so, vi du `1` thanh `0001`.
+Code sẽ tự chuyển id về dạng 4 chữ số, ví dụ `1` thành `0001`.
 
-## Cai dat local
+## Cài đặt local
 
 ```powershell
 cd F:\NgDuyLinh\Do_an\DeepLearning_FN\DeepLearning_train
 pip install -r requirements.txt
 ```
 
-## Train tren Kaggle
+## Train trên Kaggle
 
-Trong Kaggle Notebook, bat GPU truoc khi train: `Settings` -> `Accelerator` -> chon `GPU`.
+Trong Kaggle Notebook, bật GPU trước khi train: `Settings` -> `Accelerator` -> chọn `GPU`.
 
-Neu repo nam trong `/kaggle/working/DeepLearning_train`, chay:
+Nếu repo nằm trong `/kaggle/working/DeepLearning_train`, chạy:
 
 ```python
 %cd /kaggle/working/DeepLearning_train
 !pip install -q -r requirements.txt
 ```
 
-Khai bao duong dan dataset. Sua `DATASET_DIR` theo dung ten dataset tren Kaggle cua ban:
+Khai báo đường dẫn dataset. Sửa `DATASET_DIR` theo đúng tên dataset trên Kaggle của bạn:
 
 ```python
 DATASET_DIR = "/kaggle/input/nhom5-deeplearning-dataset"
@@ -188,7 +188,7 @@ Train 1 task:
   --grad-accum-steps 4
 ```
 
-Train ca 3 task:
+Train cả 3 task:
 
 ```python
 !python train.py \
@@ -201,7 +201,7 @@ Train ca 3 task:
   --grad-accum-steps 4
 ```
 
-Neu bi thieu GPU memory, giam `--batch-size` hoac `--target-slices`:
+Nếu bị thiếu GPU memory, giảm `--batch-size` hoặc `--target-slices`:
 
 ```python
 !python train.py \
@@ -214,7 +214,7 @@ Neu bi thieu GPU memory, giam `--batch-size` hoac `--target-slices`:
   --grad-accum-steps 4
 ```
 
-Output se duoc luu theo thu muc dang dung de chay lenh. Neu `%cd /kaggle/working/DeepLearning_train` thi checkpoint nam tai:
+Output sẽ được lưu theo thư mục đang dùng để chạy lệnh. Nếu `%cd /kaggle/working/DeepLearning_train` thì checkpoint nằm tại:
 
 ```text
 /kaggle/working/DeepLearning_train/weights/<task>/<model_name>_best_model.pth
@@ -236,21 +236,21 @@ python train.py `
   --grad-accum-steps 4
 ```
 
-## Tham so CLI cua train.py
+## Tham số CLI của train.py
 
-| Tham so | Mac dinh | Y nghia |
+| Tham số | Mặc định | Ý nghĩa |
 |---|---:|---|
-| `--model` | `efficientnetb0` | Chon model: `densenet121`, `efficientnetb0`, `efficientnetb0_vit`. |
-| `--tasks` | `abnormal,acl,meniscus` | Danh sach task can train, ngan cach bang dau phay. |
-| `--data-root` | `data` | Thu muc chua `train/valid/test` va 3 mat cat. |
-| `--labels-root` | `labels` | Thu muc chua cac file CSV label. |
-| `--batch-size` | theo `config.py` | Micro-batch size dua vao GPU. |
-| `--target-slices` | theo `config.py` | So slice moi volume sau tien xu ly. |
-| `--grad-accum-steps` | theo `config.py` | So buoc tich luy gradient. Effective batch size = `batch_size * grad_accum_steps`. |
+| `--model` | `efficientnetb0` | Chọn model: `densenet121`, `efficientnetb0`, `efficientnetb0_vit`. |
+| `--tasks` | `abnormal,acl,meniscus` | Danh sách task cần train, ngăn cách bằng dấu phẩy. |
+| `--data-root` | `data` | Thư mục chứa `train/valid/test` và 3 mặt cắt. |
+| `--labels-root` | `labels` | Thư mục chứa các file CSV label. |
+| `--batch-size` | theo `config.py` | Micro-batch size đưa vào GPU. |
+| `--target-slices` | theo `config.py` | Số slice mỗi volume sau tiền xử lý. |
+| `--grad-accum-steps` | theo `config.py` | Số bước tích lũy gradient. Effective batch size = `batch_size * grad_accum_steps`. |
 
-## Cau hinh mac dinh
+## Cấu hình mặc định
 
-Mot so gia tri quan trong trong `config.py`:
+Một số giá trị quan trọng trong `config.py`:
 
 ```python
 config = {
@@ -276,7 +276,7 @@ weights/<task>/<model_name>_best_model.pth
 weights/<task>/<model_name>_last_checkpoint.pth
 ```
 
-Vi du:
+Ví dụ:
 
 ```text
 weights/abnormal/efficientnetb0_vit_best_model.pth
@@ -284,7 +284,7 @@ weights/acl/efficientnetb0_vit_best_model.pth
 weights/meniscus/efficientnetb0_vit_best_model.pth
 ```
 
-Metric va bieu do:
+Metric và biểu đồ:
 
 ```text
 evaluation/<model_name>_<task>/
@@ -297,40 +297,40 @@ evaluation/<model_name>_<task>/
 `-- <model_name>_<task>_test_confusion.png
 ```
 
-Trong qua trinh train, code cung ghi TensorBoard log thong qua `SummaryWriter`.
+Trong quá trình train, code cũng ghi TensorBoard log thông qua `SummaryWriter`.
 
-## Tom tat pipeline train
+## Tóm tắt pipeline train
 
-1. Doc label CSV va 3 volume `.npy` tu `axial`, `coronal`, `sagittal`.
-2. Dua moi volume ve `target_slices` bang `uniform_slice_sampling`.
-3. Center crop/resize ve `image_size x image_size`.
-4. Chuan hoa intensity va tao tensor 3 kenh gia lap RGB.
-5. Dua 3 mat cat vao model.
-6. Train voi `BCEWithLogitsLoss(pos_weight=...)` va optimizer `Adam`.
-7. Dung mixed precision khi co CUDA.
-8. Dung gradient accumulation de tang effective batch size.
+1. Đọc label CSV và 3 volume `.npy` từ `axial`, `coronal`, `sagittal`.
+2. Đưa mỗi volume về `target_slices` bằng `uniform_slice_sampling`.
+3. Center crop/resize về `image_size x image_size`.
+4. Chuẩn hóa intensity và tạo tensor 3 kênh giả lập RGB.
+5. Đưa 3 mặt cắt vào model.
+6. Train với `BCEWithLogitsLoss(pos_weight=...)` và optimizer `Adam`.
+7. Dùng mixed precision khi có CUDA.
+8. Dùng gradient accumulation để tăng effective batch size.
 9. Scheduler `ReduceLROnPlateau` theo `val_auc`.
-10. Early stopping khi `val_auc` khong cai thien sau `patience` epoch.
-11. Luu best checkpoint theo validation AUC va last checkpoint de resume.
-12. Tim threshold tot nhat theo F1 tren validation set.
-13. Danh gia test set bang threshold tot nhat tu validation set.
-14. Luu CSV metric, ROC curve, confusion matrix va training curves.
+10. Early stopping khi `val_auc` không cải thiện sau `patience` epoch.
+11. Lưu best checkpoint theo validation AUC và last checkpoint để resume.
+12. Tìm threshold tốt nhất theo F1 trên validation set.
+13. Đánh giá test set bằng threshold tốt nhất từ validation set.
+14. Lưu CSV metric, ROC curve, confusion matrix và training curves.
 
-## Lenh phu tro
+## Lệnh phụ trợ
 
-Tach train thanh train/valid/test:
+Tách train thành train/valid/test:
 
 ```powershell
 python tools/split_dataset.py --data-root data --label-root labels --task abnormal --ratios 0.7 0.15 0.15
 ```
 
-Chay thu truoc khi move file:
+Chạy thử trước khi move file:
 
 ```powershell
 python tools/split_dataset.py --data-root data --label-root labels --task abnormal --dry-run
 ```
 
-Tim learning rate phu hop:
+Tìm learning rate phù hợp:
 
 ```powershell
 python tools/lr_finder.py --model efficientnetb0 --task acl --lr-start 1e-6 --lr-end 1e-2 --iters 100
@@ -342,9 +342,9 @@ Convert checkpoint EfficientNet-B0:
 python tools/convert_n5_efficientnet_pretrained.py --input path/to/input.pth --output weights/converted_efficientnetb0.pth
 ```
 
-## Luu y
+## Lưu ý
 
-- `train.py` tu resume neu ton tai `weights/<task>/<model_name>_last_checkpoint.pth`.
-- Neu muon train lai tu dau, doi ten/xoa checkpoint cu trong `weights/<task>/`.
-- Test split la tuy chon. Neu khong co `test-<task>.csv` hoac `data/test`, code se bo qua phan danh gia test.
-- Day la code nghien cuu/ky thuat, khong dung thay the chan doan y khoa cua bac si.
+- `train.py` tự resume nếu tồn tại `weights/<task>/<model_name>_last_checkpoint.pth`.
+- Nếu muốn train lại từ đầu, đổi tên/xóa checkpoint cũ trong `weights/<task>/`.
+- Test split là tùy chọn. Nếu không có `test-<task>.csv` hoặc `data/test`, code sẽ bỏ qua phần đánh giá test.
+- Đây là code nghiên cứu/kỹ thuật, không dùng thay thế chẩn đoán y khoa của bác sĩ.
