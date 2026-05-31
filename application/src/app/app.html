@@ -1,0 +1,164 @@
+<main class="app-shell">
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">EfficientNetB0 MRI</p>
+      <h1>Chẩn đoán chấn thương gối</h1>
+    </div>
+    <button
+      class="icon-button"
+      type="button"
+      (click)="loadStatus()"
+      [disabled]="statusLoading()"
+      aria-label="Làm mới trạng thái model"
+    >
+      ↻
+    </button>
+  </header>
+
+  <section class="status-strip" aria-label="Trạng thái model">
+    <div class="status-metric">
+      <span>API</span>
+      <strong>{{ health() ? 'Online' : 'Offline' }}</strong>
+    </div>
+    <div class="status-metric">
+      <span>Thiết bị</span>
+      <strong>{{ health()?.device ?? '--' }}</strong>
+    </div>
+    <div class="status-metric">
+      <span>Model</span>
+      <strong>{{ selectedModelOption()?.label ?? selectedModel() }} · {{ availableModelCount() }}/3</strong>
+    </div>
+    <div class="status-metric">
+      <span>Số lát cắt</span>
+      <strong>{{ health()?.targetSlices ?? 24 }}</strong>
+    </div>
+    <div class="status-metric">
+      <span>Tối đa mỗi mặt</span>
+      <strong>{{ health()?.maxFilesPerPlane ?? maxFilesPerPlane }} ảnh</strong>
+    </div>
+  </section>
+
+  <section class="model-row" aria-label="Danh sách model">
+    @for (model of selectedModelTasks(); track model.task) {
+      <article class="model-chip" [class.ready]="model.available" [class.error]="model.error">
+        <span class="dot"></span>
+        <div>
+          <strong>{{ model.label }}</strong>
+          <small>{{ model.available ? 'Đã tải weight' : 'Chờ file .pth' }}</small>
+        </div>
+      </article>
+    }
+  </section>
+
+  <section class="workspace">
+    <div class="upload-grid">
+      @for (plane of planeConfigs; track plane.key) {
+        <article class="upload-panel">
+          <div class="upload-heading">
+            <div>
+              <h2>{{ plane.title }}</h2>
+              <p>{{ plane.subtitle }}</p>
+            </div>
+            @if (getPlaneFiles(plane.key).length) {
+              <button class="text-button" type="button" (click)="clearPlane(plane.key)">Xóa</button>
+            }
+          </div>
+
+          <label class="dropzone">
+            <input
+              type="file"
+              multiple
+              accept=".npy,.png,.jpg,.jpeg,.bmp,.gif,.webp,.tif,.tiff,.dcm,.dicom"
+              (change)="onFilesSelected(plane.key, $event)"
+            />
+            <span class="upload-icon">+</span>
+            <strong>{{ fileSummary(plane.key) }}</strong>
+            @if (getPlaneFiles(plane.key).length) {
+              <small>{{ getPlaneFiles(plane.key)[0].name }}</small>
+            } @else {
+              <small>Chọn nhiều ảnh, tối đa {{ maxFilesPerPlane }} file</small>
+            }
+          </label>
+
+          @if (getPlanePreviews(plane.key).length) {
+            <div class="preview-grid" [attr.aria-label]="'Ảnh đã chọn cho ' + plane.title">
+              @for (preview of getPlanePreviews(plane.key); track preview.url) {
+                <figure class="preview-tile">
+                  <img [src]="preview.url" [alt]="preview.name" />
+                  <figcaption>{{ preview.name }}</figcaption>
+                </figure>
+              }
+            </div>
+          } @else if (getPlaneFiles(plane.key).length) {
+            <p class="no-preview">Định dạng này không xem trước trực tiếp trên trình duyệt.</p>
+          }
+        </article>
+      }
+    </div>
+
+    <aside class="diagnosis-panel">
+      <div class="panel-header">
+        <div>
+          <h2>Kết quả</h2>
+          <p>{{ selectedModelOption()?.label ?? selectedModel() }} · Ngưỡng {{ threshold().toFixed(2) }}</p>
+        </div>
+      </div>
+
+      <label class="select-row">
+        <span>Model thực nghiệm</span>
+        <select [value]="selectedModel()" (change)="onModelChange($event)">
+          @for (model of modelOptions(); track model.name) {
+            <option [value]="model.name">{{ model.label }} ({{ model.availableCount }}/3)</option>
+          }
+        </select>
+      </label>
+
+      <label class="slider-row">
+        <span>Ngưỡng dự đoán</span>
+        <input
+          type="range"
+          min="0.1"
+          max="0.9"
+          step="0.05"
+          [value]="threshold()"
+          (input)="onThresholdInput($event)"
+        />
+      </label>
+
+      <button class="primary-button" type="button" (click)="diagnose()" [disabled]="!canDiagnose()">
+        {{ loading() ? 'Đang xử lý...' : 'Chẩn đoán' }}
+      </button>
+
+      @if (error()) {
+        <p class="error-message">{{ error() }}</p>
+      }
+
+      @if (result()) {
+        <section class="summary">
+          <h3>{{ result()?.diagnosis }}</h3>
+          <p>Model đang dùng: {{ result()?.modelLabel ?? selectedModelOption()?.label }} · task có weight: {{ result()?.availableModels?.join(', ') || 'chưa có' }}</p>
+        </section>
+
+        <div class="task-results">
+          @for (task of resultTasks(); track task.key) {
+            <article class="task-row" [class.positive]="task.prediction" [class.missing]="!task.available">
+              <div>
+                <strong>{{ task.label }}</strong>
+                <span>{{ task.message }}</span>
+                @if (task.inferred) {
+                  <small>Điểm model gốc: {{ formatPercent(task.rawProbability ?? task.probability) }}</small>
+                }
+              </div>
+              <b>{{ formatPercent(task.probability) }}</b>
+            </article>
+          }
+        </div>
+      } @else {
+        <section class="empty-state">
+          <h3>Sẵn sàng nhận ảnh MRI</h3>
+          <p>Abnormal được dự đoán trước; ACL và meniscus sẽ tự kích hoạt khi có weight.</p>
+        </section>
+      }
+    </aside>
+  </section>
+</main>
