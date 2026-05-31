@@ -18,6 +18,8 @@ Pipeline hiện tại đọc volume MRI dạng `.npy`, chuẩn hóa số slice/k
 
 ```text
 DeepLearning_train/
+|-- api (api để web gọi đến)
+|-- application (thực nghiệm chuẩn đoán)
 |-- config.py
 |-- train.py
 |-- requirements.txt
