@@ -32,10 +32,6 @@ DeepLearning_train/
 |   `-- EfficientNetB0_ViT.py
 |-- preprocessing/
 |   `-- slice_sampling.py
-|-- tools/
-|   |-- split_dataset.py
-|   |-- lr_finder.py
-|   `-- convert_n5_efficientnet_pretrained.py
 |-- utils/
 |   |-- __init__.py
 |   `-- utils.py
@@ -71,13 +67,10 @@ DeepLearning_train/
 | `models/EfficientNetB0_ViT.py` | Model EfficientNet-B0 kết hợp Transformer nhẹ. EfficientNet trích đặc trưng từng slice, `SliceViT` gộp đặc trưng theo chiều slice bằng class token/positional embedding, sau đó nối 3 mặt cắt để phân loại. |
 | `models/__init__.py` | Export các class model: `Densenet121`, `EfficientNetB0`, `EfficientNetB0_ViT`. |
 
-### Tools và utils
+### Utils
 
 | File | Chức năng |
 |---|---|
-| `tools/split_dataset.py` | Tách dữ liệu từ train thành train/valid/test theo tỉ lệ, di chuyển file `.npy` và ghi lại CSV label cho từng split. Có `--dry-run` để xem thử trước khi move file. |
-| `tools/lr_finder.py` | Chạy LR finder cho `densenet121` hoặc `efficientnetb0`, quét learning rate từ `--lr-start` đến `--lr-end`, lưu plot loss theo LR vào `evaluation/`. |
-| `tools/convert_n5_efficientnet_pretrained.py` | Convert checkpoint EfficientNet-B0 từ format có `backbone.*` sang format 3 backbone `axial/coronal/sagittal` của repo. |
 | `utils/utils.py` | Hàm train/evaluate phiên bản cũ và hàm `_get_lr` đang được `train.py` dùng để lấy learning rate hiện tại. |
 | `utils/__init__.py` | Export các helper trong `utils.py`. |
 
@@ -315,32 +308,6 @@ Trong quá trình train, code cũng ghi TensorBoard log thông qua `SummaryWrite
 12. Tìm threshold tốt nhất theo F1 trên validation set.
 13. Đánh giá test set bằng threshold tốt nhất từ validation set.
 14. Lưu CSV metric, ROC curve, confusion matrix và training curves.
-
-## Lệnh phụ trợ
-
-Tách train thành train/valid/test:
-
-```powershell
-python tools/split_dataset.py --data-root data --label-root labels --task abnormal --ratios 0.7 0.15 0.15
-```
-
-Chạy thử trước khi move file:
-
-```powershell
-python tools/split_dataset.py --data-root data --label-root labels --task abnormal --dry-run
-```
-
-Tìm learning rate phù hợp:
-
-```powershell
-python tools/lr_finder.py --model efficientnetb0 --task acl --lr-start 1e-6 --lr-end 1e-2 --iters 100
-```
-
-Convert checkpoint EfficientNet-B0:
-
-```powershell
-python tools/convert_n5_efficientnet_pretrained.py --input path/to/input.pth --output weights/converted_efficientnetb0.pth
-```
 
 ## Lưu ý
 
