@@ -1,59 +1,83 @@
-# DeepLearning_train - Huấn luyện model MRI gối
+# DeepLearning_train
 
-Thư mục này chứa pipeline huấn luyện model deep learning để phân loại MRI gối theo 3 mặt cắt: `axial`, `coronal`, `sagittal`.
+Pipeline huan luyen mo hinh deep learning de phan loai MRI goi theo 3 mat cat:
 
-Các task đang hỗ trợ:
+- `axial`
+- `coronal`
+- `sagittal`
 
-- `abnormal`: phát hiện bất thường tổng quát.
-- `acl`: phát hiện tổn thương dây chằng chéo trước.
-- `meniscus`: phát hiện tổn thương sụn chêm.
+Repo ho tro 3 task:
 
-## Cấu trúc thư mục
+- `abnormal`: phat hien bat thuong tong quat.
+- `acl`: phat hien ton thuong day chang cheo truoc.
+- `meniscus`: phat hien ton thuong sun chem.
+
+## Cau Truc
 
 ```text
 DeepLearning_train/
-├── config.py                  # Cấu hình train mặc định
-├── train.py                   # Script train chính
-├── requirements.txt           # Dependency cài đặt
-├── dataset/
-│   └── dataset.py             # Dataset loader và DataLoader
-├── models/
-│   ├── EfficientNetB0.py      # Model EfficientNet-B0 cho 3 mặt cắt
-│   └── Densenet121.py         # Model DenseNet121 cho 3 mặt cắt
-├── preprocessing/             # Augmentation, resize, sampling, normalization
-├── utils/                     # Hàm hỗ trợ train/evaluate
-├── tools/                     # Công cụ phụ trợ
-├── weights/                   # Checkpoint .pth sau khi train
-└── evaluation/                # CSV metrics, ROC, confusion matrix, curves
++-- config.py
++-- train.py
++-- requirements.txt
++-- dataset/
+|   +-- dataset.py
++-- models/
+|   +-- Densenet121.py
+|   +-- EfficientNetB0.py
+|   +-- EfficientNetB0_ViT.py
++-- preprocessing/
++-- tools/
++-- utils/
++-- weights/
++-- evaluation/
 ```
 
-## Cài đặt
+## Model
+
+`train.py` ho tro cac gia tri `--model`:
+
+- `densenet121`
+- `efficientnetb0`
+- `efficientnetb0_vit`
+
+Model chinh nen dung hien tai:
+
+```text
+efficientnetb0_vit
+```
+
+Huong train hien tai la train doc lap tung task hoac train nhieu task trong cung mot lenh.
+
+## Cai Dat
 
 ```powershell
+cd F:\NgDuyLinh\Do_an\DeepLearning_FN\DeepLearning_train
 pip install -r requirements.txt
 ```
 
-## Cấu trúc dữ liệu
+Tren Kaggle/Colab, cai dependency theo notebook neu moi truong da co san PyTorch thi khong can cai lai toan bo.
 
-Dữ liệu mặc định được đọc từ:
+## Cau Truc Du Lieu
+
+Thu muc anh:
 
 ```text
 data/
-├── train/
-│   ├── axial/
-│   ├── coronal/
-│   └── sagittal/
-├── valid/
-│   ├── axial/
-│   ├── coronal/
-│   └── sagittal/
-└── test/
-    ├── axial/
-    ├── coronal/
-    └── sagittal/
++-- train/
+|   +-- axial/
+|   +-- coronal/
+|   +-- sagittal/
++-- valid/
+|   +-- axial/
+|   +-- coronal/
+|   +-- sagittal/
++-- test/
+    +-- axial/
+    +-- coronal/
+    +-- sagittal/
 ```
 
-Mỗi file MRI là `.npy`, ví dụ:
+Moi mau can co du 3 file `.npy` cung id:
 
 ```text
 data/train/axial/0001.npy
@@ -61,101 +85,146 @@ data/train/coronal/0001.npy
 data/train/sagittal/0001.npy
 ```
 
-Label được đọc từ thư mục `labels/`:
+Thu muc label:
 
 ```text
 labels/
-├── train-abnormal.csv
-├── valid-abnormal.csv
-├── test-abnormal.csv
-├── train-acl.csv
-├── valid-acl.csv
-├── test-acl.csv
-├── train-meniscus.csv
-├── valid-meniscus.csv
-└── test-meniscus.csv
++-- train-abnormal.csv
++-- valid-abnormal.csv
++-- test-abnormal.csv
++-- train-acl.csv
++-- valid-acl.csv
++-- test-acl.csv
++-- train-meniscus.csv
++-- valid-meniscus.csv
++-- test-meniscus.csv
 ```
 
-Định dạng CSV:
+CSV khong nen co header vi code doc voi `header=None`. Dinh dang moi dong:
 
 ```csv
-id,label
+0001,1
+0002,0
 ```
 
-Code hiện đọc CSV bằng `header=None`, nên file label thực tế không nên có dòng header.
+## Cau Hinh
 
-## Cấu hình chính
+Tham so mac dinh nam trong `config.py`.
 
-Cấu hình nằm trong `config.py`. Các tham số thường chỉnh:
+Mot so tham so quan trong:
 
 ```python
 'lr': 2e-5
-'batch_size': 4
+'batch_size': 8
 'image_size': 224
-'target_slices': 24
+'target_slices': 32
 'weight_decay': 1e-4
 'patience': 5
-'use_gradient_accumulation': 1
-'gradient_accumulation_steps': 8
+'gradient_accumulation_steps': 4
 ```
 
-Effective batch size = `batch_size * gradient_accumulation_steps`.
-
-## Train model
-
-Chạy tất cả task bằng EfficientNet-B0:
-
-```powershell
-python train.py --model efficientnetb0 --tasks abnormal,acl,meniscus --data-root data --labels-root labels
-```
-
-Chạy từng task:
-
-```powershell
-python train.py --model efficientnetb0 --tasks abnormal --data-root data --labels-root labels
-python train.py --model efficientnetb0 --tasks acl --data-root data --labels-root labels
-python train.py --model efficientnetb0 --tasks meniscus --data-root data --labels-root labels
-```
-
-Warm-start ACL/Meniscus từ checkpoint Abnormal:
-
-```powershell
-python train.py --model efficientnetb0 --tasks acl,meniscus --abnormal-pth weights/abnormal/efficientnetb0_best_model.pth
-```
-
-## Output sau khi train
-
-Checkpoint được lưu vào:
+Effective batch size:
 
 ```text
-weights/<task>/
-├── efficientnetb0_best_model.pth
-└── efficientnetb0_last_checkpoint.pth
+batch_size * gradient_accumulation_steps
 ```
 
-Kết quả đánh giá được lưu vào:
+## Train Tren Kaggle
+
+Train mot task:
+
+```python
+!python train.py \
+  --model efficientnetb0_vit \
+  --tasks abnormal \
+  --data-root /kaggle/input/datasets/zuylyn/nhom5-deeplearning-dataset/data \
+  --labels-root /kaggle/input/datasets/zuylyn/nhom5-deeplearning-dataset/labels \
+  --batch-size 8 \
+  --target-slices 24 \
+  --grad-accum-steps 4
+```
+
+Sau khi train xong, checkpoint se nam o:
 
 ```text
-evaluation/efficientnetb0_<task>/
-├── efficientnetb0_<task>_metrics.csv
-├── efficientnetb0_<task>_test_metrics.csv
-├── efficientnetb0_<task>_curves.png
-├── efficientnetb0_<task>_roc.png
-├── efficientnetb0_<task>_confusion.png
-├── efficientnetb0_<task>_test_roc.png
-└── efficientnetb0_<task>_test_confusion.png
+/kaggle/working/weights/<task>/efficientnetb0_vit_best_model.pth
 ```
 
-## Pipeline hiện tại
+Train nhieu task:
 
-- `BCEWithLogitsLoss`
-- `Adam`
-- `ReduceLROnPlateau` theo `val_auc`
-- Early stopping theo `val_auc`
-- Mixed precision khi có CUDA
-- Gradient accumulation
-- Lưu best checkpoint theo validation AUC
-- Tìm best threshold theo F1 trên validation set
-- Đánh giá test set bằng threshold tốt nhất từ validation
+```python
+!python train.py \
+  --model efficientnetb0_vit \
+  --tasks acl,meniscus \
+  --data-root /kaggle/input/datasets/zuylyn/nhom5-deeplearning-dataset/data \
+  --labels-root /kaggle/input/datasets/zuylyn/nhom5-deeplearning-dataset/labels \
+  --batch-size 8 \
+  --target-slices 24 \
+  --grad-accum-steps 4
+```
 
-Kết quả model chỉ phục vụ nghiên cứu/hỗ trợ kỹ thuật, không thay thế chẩn đoán y khoa.
+## Train Local
+
+```powershell
+cd F:\NgDuyLinh\Do_an\DeepLearning_FN\DeepLearning_train
+
+python train.py `
+  --model efficientnetb0_vit `
+  --tasks abnormal `
+  --data-root data `
+  --labels-root labels `
+  --batch-size 8 `
+  --target-slices 24 `
+  --grad-accum-steps 4
+```
+
+## Output
+
+Checkpoint:
+
+```text
+weights/<task>/<model_name>_best_model.pth
+weights/<task>/<model_name>_last_checkpoint.pth
+```
+
+Vi du:
+
+```text
+weights/abnormal/efficientnetb0_vit_best_model.pth
+weights/acl/efficientnetb0_vit_best_model.pth
+weights/meniscus/efficientnetb0_vit_best_model.pth
+```
+
+Ket qua danh gia:
+
+```text
+evaluation/<model_name>_<task>/
++-- <model_name>_<task>_metrics.csv
++-- <model_name>_<task>_test_metrics.csv
++-- <model_name>_<task>_curves.png
++-- <model_name>_<task>_roc.png
++-- <model_name>_<task>_confusion.png
++-- <model_name>_<task>_test_roc.png
++-- <model_name>_<task>_test_confusion.png
+```
+
+## Pipeline
+
+- Resize/crop ve `image_size`.
+- Lay mau deu ve `target_slices`.
+- Chuan hoa cuong do anh.
+- Tao input 3 kenh cho backbone torchvision.
+- Dung `BCEWithLogitsLoss`.
+- Dung `Adam`.
+- Dung `ReduceLROnPlateau` theo `val_auc`.
+- Early stopping theo `val_auc`.
+- Mixed precision khi co CUDA.
+- Gradient accumulation.
+- Luu best checkpoint theo validation AUC.
+- Tim best threshold theo F1 tren validation set.
+- Danh gia test set bang best threshold tu validation.
+- Loc/sanitize `NaN/Inf` de tranh `Val Loss = NaN`.
+
+## Luu Y
+
+Ket qua chi phuc vu muc dich nghien cuu va ho tro ky thuat. Khong dung thay the chan doan y khoa cua bac si.

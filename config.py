@@ -1,5 +1,3 @@
-import os
-
 config = {
     'max_epoch' : 50,
     'log_train' : 100,
@@ -21,12 +19,4 @@ config = {
     'use_gradient_accumulation' : 1,
     # Effective batch size = batch_size * gradient_accumulation_steps = 4 * 8 = 32.
     'gradient_accumulation_steps' : 4,
-    # Warm-start ACL/Meniscus from Abnormal checkpoint (useful on Kaggle).
-    # You can override by env var ABNORMAL_WARMSTART_PTH or CLI --abnormal-pth.
-    'abnormal_warmstart_path' : os.environ.get(
-        'ABNORMAL_WARMSTART_PTH',
-        '/kaggle/working/weights/abnormal/efficientnetb0_best_model.pth',
-    ),
-    'warmstart_tasks' : ['acl', 'meniscus'],
-    'warmstart_from_abnormal' : 1,
 }
